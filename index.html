@@ -2,6 +2,9 @@
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@700;900&display=swap');
 *{box-sizing:border-box;margin:0;padding:0;}
+@keyframes fadeUp{0%{opacity:1;top:-4px}70%{opacity:1;top:-28px}100%{opacity:0;top:-48px}}
+@keyframes wgl{0%{transform:rotate(0)}30%{transform:rotate(-9deg)}70%{transform:rotate(9deg)}100%{transform:rotate(0)}}
+@keyframes popIn{0%{transform:scale(0.5);opacity:0}100%{transform:scale(1);opacity:1}}
 </style>
 
 <div id="root"></div>
@@ -9,46 +12,104 @@
 <script>
 const R = document.getElementById('root');
 
-// ── palette ──
 const C = {
-  pink:    '#FF6B9D',
-  purple:  '#6B4FA8',
-  purpleL: '#DDD0FF',
-  purpleBg:'#F8F5FF',
-  yellow:  '#F5C842',
-  yellowBg:'#FFF8E1',
-  yellowDk:'#8B6914',
-  green:   '#6DC47F',
-  greenL:  '#F0FBF3',
-  greenBd: '#A8DFB0',
-  orange:  '#FF9F5A',
-  orangeDk:'#C87030',
-  pinkBg:  '#FFF0FA',
-  pinkBd:  '#FFB3D9',
-  white:   '#FFFFFF',
-  dark:    '#4A3080',
-  gray:    '#AAAAAA',
-  grayBg:  '#F0F0F0',
-  graybd:  '#CCCCCC',
-  red:     '#E74C3C',
-  amber:   '#E07A00',
+  pink:'#FF6B9D', purple:'#6B4FA8', purpleL:'#DDD0FF', purpleBg:'#F8F5FF',
+  yellow:'#F5C842', yellowBg:'#FFF8E1', yellowDk:'#8B6914',
+  green:'#6DC47F', greenL:'#F0FBF3', greenBd:'#A8DFB0',
+  orange:'#FF9F5A', orangeDk:'#C87030',
+  pinkBg:'#FFF0FA', pinkBd:'#FFB3D9',
+  white:'#FFFFFF', dark:'#4A3080',
+  grayBg:'#F0F0F0', graybd:'#CCCCCC',
+  red:'#E74C3C', amber:'#E07A00',
 };
 
+// ── Web Audio ──
+let audioCtx = null;
+function getCtx(){
+  if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state==='suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function playTone(freq, type, startTime, duration, gainVal, ctx){
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, startTime);
+  gain.gain.setValueAtTime(gainVal, startTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime+duration);
+  osc.start(startTime);
+  osc.stop(startTime+duration);
+}
+
+// Melodia di successo: arpeggio Do-Mi-Sol-Do (gioioso, per bambini)
+function playSuccess(){
+  const ctx = getCtx();
+  const now = ctx.currentTime;
+  const notes = [523.25, 659.25, 783.99, 1046.50]; // C5 E5 G5 C6
+  notes.forEach((freq, i) => {
+    playTone(freq, 'sine', now + i*0.12, 0.35, 0.4, ctx);
+  });
+  // aggiunge un piccolo "shimmer" percussivo
+  setTimeout(()=>{
+    const ctx2 = getCtx();
+    const n2 = ctx2.currentTime;
+    playTone(1200, 'triangle', n2, 0.15, 0.15, ctx2);
+    playTone(1500, 'triangle', n2+0.05, 0.12, 0.10, ctx2);
+  }, 480);
+}
+
+// Suono soluzione trovata (ogni singola soluzione, non solo la terza)
+function playSolFound(num){
+  const ctx = getCtx();
+  const now = ctx.currentTime;
+  // tono sale con il numero di soluzioni trovate
+  const baseFreqs = [[392,523],[523,659],[659,880]];
+  const pair = baseFreqs[Math.min(num-1,2)];
+  playTone(pair[0], 'sine', now,      0.18, 0.3, ctx);
+  playTone(pair[1], 'sine', now+0.15, 0.22, 0.35, ctx);
+}
+
+// Suono errore: breve "boing" discendente
+function playWrong(){
+  const ctx = getCtx();
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(300, now);
+  osc.frequency.exponentialRampToValueAtTime(150, now+0.25);
+  gain.gain.setValueAtTime(0.3, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now+0.25);
+  osc.start(now); osc.stop(now+0.25);
+}
+
+// Suono tasto rotto: vibrazione corta
+function playBroken(){
+  const ctx = getCtx();
+  const now = ctx.currentTime;
+  [0, 0.05, 0.10].forEach(t=>{
+    playTone(180, 'square', now+t, 0.04, 0.08, ctx);
+  });
+}
+
+// ── helpers DOM ──
 function el(tag, styles, attrs){
   const e = document.createElement(tag);
   if(styles) Object.assign(e.style, styles);
   if(attrs)  Object.assign(e, attrs);
   return e;
 }
-function txt(str){ return document.createTextNode(str); }
-function ap(parent, ...children){ children.forEach(c=>parent.appendChild(c)); return parent; }
+function txt(s){ return document.createTextNode(s); }
+function ap(p,...ch){ ch.forEach(c=>p.appendChild(c)); return p; }
 
-// ── state ──
+// ── stato ──
 let level=1, maxRange=20, score=0, done=0;
 let solutions=[], currentTarget=0, currentBroken=[];
 let usedTargets=new Set();
 let fullExpr='', currentNum='', justEvaled=false;
-
 const ALL_OPS=['+','-','×','÷'];
 const ALL_DIGITS=['0','1','2','3','4','5','6','7','8','9'];
 const NEEDED=3;
@@ -60,7 +121,7 @@ function genBroken(target,l){
   const n=brokenCount(l);
   const tD=new Set(String(target).split(''));
   let out=shuffle(ALL_DIGITS.filter(d=>!tD.has(d)));
-  let ins=shuffle(ALL_DIGITS.filter(d=> tD.has(d)));
+  let ins=shuffle(ALL_DIGITS.filter(d=>tD.has(d)));
   let ch=out.slice(0,n);
   if(ch.length<n) ch=ch.concat(ins.slice(0,Math.max(0,ins.length-1))).slice(0,n);
   return ch;
@@ -78,59 +139,46 @@ function newChallenge(){
   currentBroken=genBroken(currentTarget,level); solutions=[];
 }
 
-// ── DOM refs (ricostruiti ad ogni render) ──
+// ── refs ──
 let refDisplay, refExpr, refGrid, refPills, refTarget, refBadge;
 let refSols=[], refBar, refPts, refDone, refSuccess, refSuccessSub, refSuccessIco;
+let refCalcRel;
 
 function buildUI(){
   R.innerHTML='';
+  const wrap = el('div',{fontFamily:"'Nunito',sans-serif",padding:'14px',maxWidth:'680px',margin:'0 auto',background:C.white,color:C.dark});
 
-  const wrap = el('div',{
-    fontFamily:"'Nunito',sans-serif", padding:'14px',
-    maxWidth:'680px', margin:'0 auto', background:C.white,
-    color: C.dark
-  });
-
-  // title
-  const title = el('div',{textAlign:'center',marginBottom:'10px'});
+  // titolo
+  const titleWrap = el('div',{textAlign:'center',marginBottom:'10px'});
   const h1 = el('div',{fontFamily:"'Fredoka One',cursive",fontSize:'24px',color:C.pink,lineHeight:'1.1'});
   h1.appendChild(txt('La Calcolatrice Rotta'));
   const sub = el('div',{fontSize:'12px',fontWeight:'700',color:C.purple,marginTop:'3px'});
   sub.appendChild(txt('Trova almeno 3 modi diversi per ottenere il numero!'));
-  ap(title,h1,sub);
+  ap(titleWrap,h1,sub);
 
-  // controls
+  // controlli
   const ctrl = el('div',{display:'flex',flexWrap:'wrap',justifyContent:'center',gap:'8px',marginBottom:'10px',alignItems:'center'});
-
   const lvlLbl = el('span',{fontSize:'11px',fontWeight:'900',color:C.purple});
   lvlLbl.appendChild(txt('Livello:'));
-
   const lvlGrp = el('div',{display:'flex',gap:'4px'});
   ['Facile','Medio','Difficile'].forEach((lbl,i)=>{
-    const b = makeSegBtn(lbl, i+1===level, ()=>setLevel(i+1));
-    lvlGrp.appendChild(b);
+    lvlGrp.appendChild(makeSegBtn(lbl, i+1===level, ()=>setLevel(i+1)));
   });
-
   const sep = el('div',{width:'1px',height:'20px',background:C.purpleL});
-
   const rangeLbl = el('span',{fontSize:'11px',fontWeight:'900',color:C.purple});
   rangeLbl.appendChild(txt('Fino a:'));
-
   const rangeGrp = el('div',{display:'flex',gap:'4px'});
   [20,50,100,999].forEach(r=>{
-    const b = makeSegBtn(String(r), r===maxRange, ()=>setRange(r));
-    rangeGrp.appendChild(b);
+    rangeGrp.appendChild(makeSegBtn(String(r), r===maxRange, ()=>setRange(r)));
   });
+  ap(ctrl,lvlLbl,lvlGrp,sep,rangeLbl,rangeGrp);
 
-  ap(ctrl, lvlLbl, lvlGrp, sep, rangeLbl, rangeGrp);
-
-  // main grid
+  // grid principale
   const grid = el('div',{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',alignItems:'start'});
 
-  // ── left col ──
+  // ── colonna sinistra ──
   const left = el('div',{display:'flex',flexDirection:'column',gap:'10px'});
 
-  // challenge card
   const chCard = el('div',{background:C.pinkBg,borderRadius:'18px',border:'2.5px solid '+C.pinkBd,padding:'12px 14px'});
   const chLbl = el('div',{fontSize:'10px',fontWeight:'900',textTransform:'uppercase',letterSpacing:'1px',color:C.pink,marginBottom:'4px'});
   chLbl.appendChild(txt('Trova questo numero'));
@@ -140,54 +188,36 @@ function buildUI(){
   refBadge.appendChild(txt('entro il 20'));
   ap(chCard,chLbl,refTarget,refBadge);
 
-  // broken card
   const bkCard = el('div',{background:C.yellowBg,borderRadius:'14px',border:'2px dashed '+C.yellow,padding:'10px 12px'});
   const bkLbl = el('div',{fontSize:'10px',fontWeight:'900',color:C.yellowDk,marginBottom:'6px'});
   bkLbl.appendChild(txt('🔧 Tasti rotti:'));
   refPills = el('div',{display:'flex',flexWrap:'wrap',gap:'5px'});
   ap(bkCard,bkLbl,refPills);
 
-  // solutions card
   const solCard = el('div',{background:C.white,borderRadius:'18px',border:'2px solid '+C.purpleL,padding:'12px 14px'});
   const solTitle = el('div',{fontSize:'11px',fontWeight:'900',color:C.purple,textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'8px'});
   solTitle.appendChild(txt('Le tue soluzioni'));
   solCard.appendChild(solTitle);
   refSols=[];
   for(let i=1;i<=3;i++){
-    const slot = makeSolSlot(i,null);
-    refSols.push(slot);
-    solCard.appendChild(slot);
+    const s=makeSolSlot(i,null);
+    refSols.push(s); solCard.appendChild(s);
   }
   const barWrap = el('div',{background:'#EEEEEE',borderRadius:'20px',height:'8px',marginTop:'8px',overflow:'hidden'});
   refBar = el('div',{height:'8px',borderRadius:'20px',background:C.green,width:'0%',transition:'width 0.4s'});
-  barWrap.appendChild(refBar);
-  solCard.appendChild(barWrap);
+  barWrap.appendChild(refBar); solCard.appendChild(barWrap);
 
-  // score row
   const scoreRow = el('div',{display:'flex',gap:'8px'});
-  const sc1 = el('div',{flex:'1',background:C.purpleBg,borderRadius:'12px',border:'2px solid '+C.purpleL,padding:'7px 10px',textAlign:'center'});
-  const sc1l = el('div',{fontSize:'9px',fontWeight:'900',color:C.purple,textTransform:'uppercase',letterSpacing:'0.5px'});
-  sc1l.appendChild(txt('Punteggio'));
-  refPts = el('div',{fontFamily:"'Fredoka One',cursive",fontSize:'22px',color:C.dark});
-  refPts.appendChild(txt('0'));
-  ap(sc1,sc1l,refPts);
-
-  const sc2 = el('div',{flex:'1',background:C.purpleBg,borderRadius:'12px',border:'2px solid '+C.purpleL,padding:'7px 10px',textAlign:'center'});
-  const sc2l = el('div',{fontSize:'9px',fontWeight:'900',color:C.purple,textTransform:'uppercase',letterSpacing:'0.5px'});
-  sc2l.appendChild(txt('Sfide'));
-  refDone = el('div',{fontFamily:"'Fredoka One',cursive",fontSize:'22px',color:C.dark});
-  refDone.appendChild(txt('0'));
-  ap(sc2,sc2l,refDone);
-  ap(scoreRow,sc1,sc2);
-
-  // next btn
-  const nextBtn = el('button',{
-    width:'100%',padding:'11px',borderRadius:'14px',
-    border:'none',background:C.orange,
-    color:C.white,fontFamily:"'Fredoka One',cursive",
-    fontSize:'18px',cursor:'pointer',marginTop:'4px',
-    boxShadow:'0 3px 0 '+C.orangeDk
+  [[refPts=el('div',{fontFamily:"'Fredoka One',cursive",fontSize:'22px',color:C.dark}),'Punteggio'],
+   [refDone=el('div',{fontFamily:"'Fredoka One',cursive",fontSize:'22px',color:C.dark}),'Sfide']
+  ].forEach(([val,label])=>{
+    const box = el('div',{flex:'1',background:C.purpleBg,borderRadius:'12px',border:'2px solid '+C.purpleL,padding:'7px 10px',textAlign:'center'});
+    const lbl = el('div',{fontSize:'9px',fontWeight:'900',color:C.purple,textTransform:'uppercase',letterSpacing:'0.5px'});
+    lbl.appendChild(txt(label)); val.appendChild(txt('0'));
+    ap(box,lbl,val); scoreRow.appendChild(box);
   });
+
+  const nextBtn = el('button',{width:'100%',padding:'11px',borderRadius:'14px',border:'none',background:C.orange,color:C.white,fontFamily:"'Fredoka One',cursive",fontSize:'18px',cursor:'pointer',marginTop:'4px',boxShadow:'0 3px 0 '+C.orangeDk});
   nextBtn.appendChild(txt('Nuova sfida 🎲'));
   nextBtn.addEventListener('click',nextChallenge);
   nextBtn.addEventListener('pointerdown',()=>{nextBtn.style.transform='translateY(3px)';nextBtn.style.boxShadow='none';});
@@ -195,26 +225,23 @@ function buildUI(){
 
   ap(left,chCard,bkCard,solCard,scoreRow,nextBtn);
 
-  // ── right col ──
+  // ── colonna destra ──
   const right = el('div',{});
-  const calcRel = el('div',{position:'relative'});
+  refCalcRel = el('div',{position:'relative'});
 
   const calcPanel = el('div',{background:'#FFF8F0',borderRadius:'22px',border:'3px solid #E8D5C0',padding:'12px',boxShadow:'0 5px 0 #E0C8B0'});
-
   const dispWrap = el('div',{background:'#FFF3D4',borderRadius:'12px',border:'2.5px solid '+C.yellow,padding:'8px 12px',marginBottom:'10px',minHeight:'72px',display:'flex',flexDirection:'column',alignItems:'flex-end',justifyContent:'space-between',gap:'4px'});
   refExpr = el('div',{fontSize:'11px',color:'#B8941A',fontWeight:'700',textAlign:'right',wordBreak:'break-all',width:'100%',minHeight:'14px'});
   refDisplay = el('div',{fontFamily:"'Fredoka One',cursive",fontSize:'34px',color:C.dark,lineHeight:'1',textAlign:'right',wordBreak:'break-all',width:'100%'});
   refDisplay.appendChild(txt('0'));
   ap(dispWrap,refExpr,refDisplay);
-
   refGrid = el('div',{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'7px'});
-
   ap(calcPanel,dispWrap,refGrid);
-  calcRel.appendChild(calcPanel);
+  refCalcRel.appendChild(calcPanel);
 
   // success overlay
   refSuccess = el('div',{display:'none',minHeight:'260px',background:'rgba(0,0,0,0.15)',alignItems:'center',justifyContent:'center',borderRadius:'20px',marginTop:'10px'});
-  const sucBox = el('div',{background:C.white,borderRadius:'26px',border:'4px solid #FFD700',padding:'22px 26px',textAlign:'center',maxWidth:'280px'});
+  const sucBox = el('div',{background:C.white,borderRadius:'26px',border:'4px solid #FFD700',padding:'22px 26px',textAlign:'center',maxWidth:'280px',animation:'popIn 0.4s cubic-bezier(0.175,0.885,0.32,1.275)'});
   refSuccessIco = el('div',{fontSize:'44px',lineHeight:'1',marginBottom:'6px'});
   refSuccessIco.appendChild(txt('🎉'));
   const sucTitle = el('div',{fontFamily:"'Fredoka One',cursive",fontSize:'24px',color:C.pink,marginBottom:'4px'});
@@ -226,28 +253,22 @@ function buildUI(){
   ap(sucBox,refSuccessIco,sucTitle,refSuccessSub,sucBtn);
   refSuccess.appendChild(sucBox);
 
-  ap(right,calcRel,refSuccess);
+  ap(right,refCalcRel,refSuccess);
   ap(grid,left,right);
-  ap(wrap,title,ctrl,grid);
+  ap(wrap,titleWrap,ctrl,grid);
   R.appendChild(wrap);
 }
 
 function makeSegBtn(label, active, cb){
-  const b = el('button',{
-    padding:'5px 12px',borderRadius:'20px',
-    border:'2px solid '+C.purpleL,
-    background: active ? C.purple : C.white,
-    color: active ? C.white : C.purple,
-    fontFamily:"'Nunito',sans-serif",fontWeight:'900',fontSize:'11px',cursor:'pointer'
-  });
+  const b = el('button',{padding:'5px 12px',borderRadius:'20px',border:'2px solid '+C.purpleL,background:active?C.purple:C.white,color:active?C.white:C.purple,fontFamily:"'Nunito',sans-serif",fontWeight:'900',fontSize:'11px',cursor:'pointer'});
   b.appendChild(txt(label));
   b.addEventListener('click',cb);
   return b;
 }
 
 function makeSolSlot(i, sol){
-  const slot = el('div',{display:'flex',alignItems:'center',gap:'8px',padding:'7px 10px',borderRadius:'12px',border: sol ? '2px solid '+C.greenBd : '2px dashed '+C.purpleL,marginBottom:'6px',minHeight:'40px',background: sol ? C.greenL : '#FAFAFA'});
-  const num = el('span',{width:'24px',height:'24px',borderRadius:'50%',background: sol ? C.green : '#E8E0FF',color: sol ? C.white : C.purple,fontFamily:"'Fredoka One',cursive",fontSize:'13px',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:'0'});
+  const slot = el('div',{display:'flex',alignItems:'center',gap:'8px',padding:'7px 10px',borderRadius:'12px',border:sol?'2px solid '+C.greenBd:'2px dashed '+C.purpleL,marginBottom:'6px',minHeight:'40px',background:sol?C.greenL:'#FAFAFA'});
+  const num = el('span',{width:'24px',height:'24px',borderRadius:'50%',background:sol?C.green:'#E8E0FF',color:sol?C.white:C.purple,fontFamily:"'Fredoka One',cursive",fontSize:'13px',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:'0'});
   num.appendChild(txt(String(i)));
   if(sol){
     const expr = el('span',{fontFamily:"'Fredoka One',cursive",fontSize:'13px',color:C.dark,flex:'1',wordBreak:'break-all'});
@@ -266,8 +287,6 @@ function makeSolSlot(i, sol){
 function renderChallenge(){
   refTarget.textContent=currentTarget;
   refBadge.textContent='entro il '+maxRange;
-
-  // pills
   refPills.innerHTML='';
   currentBroken.forEach(k=>{
     const p = el('div',{width:'36px',height:'36px',borderRadius:'9px',background:C.grayBg,border:'2px dashed '+C.graybd,color:'#999999',fontFamily:"'Fredoka One',cursive",fontSize:'20px',display:'flex',alignItems:'center',justifyContent:'center',position:'relative'});
@@ -277,7 +296,6 @@ function renderChallenge(){
     refPills.appendChild(p);
   });
 
-  // buttons
   refGrid.innerHTML='';
   const BTN=[
     {k:'7',t:'n'},{k:'8',t:'n'},{k:'9',t:'n'},{k:'÷',t:'o'},
@@ -295,28 +313,13 @@ function renderChallenge(){
     else if(t==='c'||t==='d'){ bg='#FFE8E8'; color='#CC3333'; border='2.5px solid #FFAAAA'; shadow='0 4px 0 #FFAAAA';}
     else{            bg=C.white;  color='#5A3FA0'; border='2.5px solid #C8B8FF'; shadow='0 4px 0 #B0A0EE';}
 
-    const btn = el('button',{
-      height:'52px', borderRadius:'12px', border, background:bg, color,
-      fontFamily:"'Fredoka One',cursive", fontSize:'22px',
-      cursor: brk ? 'not-allowed' : 'pointer',
-      boxShadow:shadow, display:'flex', alignItems:'center',
-      justifyContent:'center', userSelect:'none',
-      WebkitTapHighlightColor:'transparent', lineHeight:'1'
-    });
+    const btn = el('button',{height:'52px',borderRadius:'12px',border,background:bg,color,fontFamily:"'Fredoka One',cursive",fontSize:'22px',cursor:brk?'not-allowed':'pointer',boxShadow:shadow,display:'flex',alignItems:'center',justifyContent:'center',userSelect:'none',WebkitTapHighlightColor:'transparent',lineHeight:'1'});
     if(t==='e') btn.style.gridColumn='span 2';
     btn.appendChild(txt(k));
-
     if(!brk){
       btn.addEventListener('pointerdown',()=>{btn.style.transform='translateY(4px)';btn.style.boxShadow='none';});
       btn.addEventListener('pointerup',()=>{btn.style.transform='';btn.style.boxShadow=shadow;});
       btn.addEventListener('pointerleave',()=>{btn.style.transform='';btn.style.boxShadow=shadow;});
-    } else {
-      btn.addEventListener('click',()=>{
-        btn.style.animation='none';
-        void btn.offsetWidth;
-        btn.style.animation='wgl 0.3s ease';
-        setTimeout(()=>btn.style.animation='',300);
-      });
     }
     btn.addEventListener('click',()=>handleBtn(k,brk));
     refGrid.appendChild(btn);
@@ -325,11 +328,10 @@ function renderChallenge(){
   hardReset();
   updateSolSlots(); updateProgress();
   refSuccess.style.display='none';
-  refSuccess.style.flexDirection='';
 }
 
 function handleBtn(k,brk){
-  if(brk) return;
+  if(brk){ playBroken(); return; }
   refDisplay.style.color=C.dark;
   if(k==='C'){hardReset();return;}
   if(k==='⌫'){
@@ -397,11 +399,21 @@ function evaluate(){
     }
     solutions.push({expr:exprStr,norm});
     const n=solutions.length;
-    const msgs=['Primo modo trovato!','Secondo modo! Ancora uno!','Terzo modo! Fantastico!','Quarto! Sei un genio!'];
+
+    if(n>=NEEDED){
+      // suono grande: arpeggio completo
+      playSuccess();
+    } else {
+      // suono intermedio: due note crescenti
+      playSolFound(n);
+    }
+
+    const msgs=['Primo modo trovato! 🎵','Secondo modo! Ancora uno! 🎶','Terzo modo! Fantastico! 🎉','Quarto! Sei un genio! ⭐'];
     showToast(msgs[Math.min(n-1,3)],'#3AA85C');
     updateSolSlots();updateProgress();
     justEvaled=true;
     setTimeout(()=>hardReset(),1000);
+
     if(n>=NEEDED){
       score+=10+level*5+Math.floor(maxRange/20);done++;
       refPts.textContent=score;
@@ -418,6 +430,7 @@ function evaluate(){
     }
   } else {
     refDisplay.style.color=C.red;
+    playWrong();
     showToast('Non fa '+currentTarget+'! Riprova.','#E74C3C');
     justEvaled=true;
     setTimeout(()=>hardReset(),1200);
@@ -425,13 +438,12 @@ function evaluate(){
 }
 
 function showToast(msg,bg){
-  const calcRel=refGrid.closest('[style*="position: relative"]')||refGrid.parentElement.parentElement;
-  const old=calcRel.querySelector('.zt');if(old)old.remove();
+  const old=refCalcRel.querySelector('.zt');if(old)old.remove();
   const t=el('div',{position:'absolute',top:'-4px',left:'50%',transform:'translateX(-50%)',color:C.white,fontFamily:"'Fredoka One',cursive",fontSize:'13px',padding:'4px 14px',borderRadius:'16px',whiteSpace:'nowrap',pointerEvents:'none',zIndex:'10',background:bg});
   t.className='zt';
   t.appendChild(txt(msg));
   t.style.animation='fadeUp 1.5s ease forwards';
-  calcRel.appendChild(t);
+  refCalcRel.appendChild(t);
   setTimeout(()=>t.remove(),1500);
 }
 
@@ -447,25 +459,10 @@ function updateProgress(){
   refBar.style.width=Math.min(solutions.length/NEEDED*100,100)+'%';
 }
 
-function setLevel(l){
-  level=l; usedTargets.clear();
-  newChallenge(); buildUI(); renderChallenge();
-}
+function setLevel(l){ level=l; usedTargets.clear(); newChallenge(); buildUI(); renderChallenge(); }
+function setRange(r){ maxRange=r; usedTargets.clear(); newChallenge(); buildUI(); renderChallenge(); }
+function nextChallenge(){ newChallenge(); renderChallenge(); }
 
-function setRange(r){
-  maxRange=r; usedTargets.clear();
-  newChallenge(); buildUI(); renderChallenge();
-}
-
-function nextChallenge(){
-  newChallenge(); renderChallenge();
-}
-
-// boot
 newChallenge(); buildUI(); renderChallenge();
 </script>
 
-<style>
-@keyframes fadeUp{0%{opacity:1;top:-4px}70%{opacity:1;top:-28px}100%{opacity:0;top:-48px}}
-@keyframes wgl{0%{transform:rotate(0)}30%{transform:rotate(-9deg)}70%{transform:rotate(9deg)}100%{transform:rotate(0)}}
-</style>
